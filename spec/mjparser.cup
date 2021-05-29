@@ -1,0 +1,387 @@
+package rs.ac.bg.etf.pp1;
+
+import java_cup.runtime.*;
+import org.apache.log4j.*;
+
+// import java.io.*;
+import rs.ac.bg.etf.pp1.ast.*;
+
+
+parser code {:
+	
+	boolean errorDetected = false;
+	
+	Logger log = Logger.getLogger(getClass());
+   
+   
+    // slede redefinisani metodi za prijavu gresaka radi izmene teksta poruke
+     
+    public void report_fatal_error(String message, Object info) throws java.lang.Exception {
+      done_parsing();
+      report_error(message, info);
+    }
+  
+    public void syntax_error(Symbol cur_token) {
+        report_error("\nSintaksna greska", cur_token);
+    }
+  
+    public void unrecovered_syntax_error(Symbol cur_token) throws java.lang.Exception {
+        report_fatal_error("Fatalna greska, parsiranje se ne moze nastaviti", cur_token);
+    }
+
+    public void report_error(String message, Object info) {
+    	errorDetected = true;
+    	StringBuilder msg = new StringBuilder(message); 
+    	if (info instanceof Symbol)
+            msg.append (" na liniji ").append(((Symbol)info).left);
+        log.error(msg.toString());
+    }
+    
+    public void report_info(String message, Object info) {
+    	StringBuilder msg = new StringBuilder(message); 
+    	if (info instanceof Symbol)
+            msg.append (" na liniji ").append(((Symbol)info).left);
+        log.info(msg.toString());
+    }
+    
+:}
+
+scan with {:
+	Symbol s = this.getScanner().next_token();
+	if (s != null && s.value != null) 
+		log.info(s.toString() + " " + s.value.toString());
+	return s;
+:}
+
+
+terminal PROG, LBRACE, RBRACE, SEMI, LPAREN, RPAREN, COMMA, PRINT, RETURN, PLUS, EQUAL, VOID;
+terminal Integer NUMCONST;
+terminal String IDENT;
+terminal Character CHARCONST;
+terminal Boolean BOOLCONST;
+terminal CONST, CLASS, EXTENDS, LSQUARE, RSQUARE;
+terminal IF, ELSE;
+terminal DO, WHILE;
+terminal SWITCH, CASE, COLON;
+terminal BREAK, CONTINUE;
+terminal READ, MINUS, NEW;
+terminal INCREMENT, DECREMENT;
+terminal FULLSTOP, OR, AND, QMARK, ENUM;
+terminal SAME, DIFF, GT, GE, LT, LE, PND, AT;
+terminal MUL, DIV, MOD;
+
+nonterminal MethodDeclList, VarDecl;
+nonterminal FormalParamList, FormalParamDecl, FormPars;
+nonterminal StatementList, Statement, Addop;
+
+nonterminal GlobDeclList, ConstDecl, ClassDecl, ConstIdentList, ConstIdent, ClassExtends, ClassMethodDeclList;
+nonterminal VarIdentList, VarIdent, VarIdentSB, VarDeclList;
+nonterminal DesignatorStatement, Condition, OptElseStatement, ElseStatement;
+nonterminal Mulop, CondTermList, CondTerm, CondFactList, OptExpr, OptRelopExpr, Relop, CaseList, Case, PrintOptNumConst;
+nonterminal Assignop, OptParenActPars, OptActPars, ActPars, ExprList, Program, MethodDecl, ColExpr;
+nonterminal RelopExpr, Ternarni, CondFact, DesignatorArray, Colon;
+nonterminal rs.etf.pp1.symboltable.concepts.Obj ProgName, Designator, MethodTypeName; 
+nonterminal rs.etf.pp1.symboltable.concepts.Struct Type, Term, Expr, AddopTermList, Factor; 
+
+precedence left ELSE;
+/* ------------------------------------------------------------------------------------------------------------- */
+
+Program ::= (Program) PROG ProgName GlobDeclList LBRACE MethodDeclList RBRACE 
+
+;
+/* ------------------------------------------------------------------------------------------------------------- */
+ProgName ::= (ProgName) IDENT:name 
+;
+
+GlobDeclList ::= GlobDeclList ConstDecl
+				 |
+				 GlobDeclList VarDecl
+				 |
+				 GlobDeclList ClassDecl
+				 |
+				 ;
+
+MethodDeclList ::= (MethodDeclarations) MethodDeclList MethodDecl
+					|
+					(NoMethodDecl)
+					;
+/* ------------------------------------------------------------------------------------------------------------- */
+
+ConstDecl ::= (ConstDecl) CONST Type ConstIdentList SEMI
+;
+
+Type ::= (Type) IDENT:typeName 
+;
+
+ConstIdentList ::= (Consts) ConstIdentList COMMA ConstIdent
+				   |
+				   (SingleConst) ConstIdent
+				   ;
+
+// napraviti 3 visit-a za izvedene klase za Tab.insert(Obj.Con, name, lastType).setAdr(value) ---------------- DONE
+ConstIdent ::= (ConstNum) IDENT:name EQUAL NUMCONST:value
+			   |
+			   (ConstChar) IDENT:name EQUAL CHARCONST:value
+			   |
+			   (ConstBool) IDENT:name EQUAL BOOLCONST:value
+			   ; 
+/* ------------------------------------------------------------------------------------------------------------- */
+VarDeclList ::= (VarDeclarations) VarDeclList VarDecl  
+				|
+				(NoVarDecl)/* epsilon */
+				;
+				
+VarDecl ::= (VarDeclt) Type VarIdentList SEMI 
+			|
+			(VarDeclError) Type error SEMI
+;
+
+VarIdentList ::= (VarIdents) VarIdentList COMMA VarIdent
+				|
+				(VarIdentSingle) VarIdent
+				|
+				(VarIdentError) error COMMA VarIdent
+				;
+
+// napraviti visit za Tab.insert(Obj.Var, varName, type)
+VarIdent ::= (VarIdent) IDENT:varName VarIdentSB
+;
+
+VarIdentSB ::= (VarIdentYesSB) LSQUARE RSQUARE // type = new Struct(Struct.Array, lastType) DONE
+				|
+				(VarIdentNoSB) // type = lastType		DONE
+				;
+/* ------------------------------------------------------------------------------------------------------------- */
+ClassDecl ::= (ClassDecl) CLASS IDENT ClassExtends LBRACE VarDeclList ClassMethodDeclList RBRACE
+;
+
+ClassExtends ::= (ClassExtend) EXTENDS Type
+				|
+				(NoClassExtends)
+				;
+				
+ClassMethodDeclList ::= (ClassMethods) LBRACE MethodDeclList RBRACE
+						|
+						(NoClassMethodDeclList)
+						;
+/* ------------------------------------------------------------------------------------------------------------- */
+
+MethodDecl ::= (MethodDecl) MethodTypeName LPAREN FormPars RPAREN VarDeclList LBRACE StatementList RBRACE 
+;
+
+MethodTypeName ::= (MethodTypeAndName) Type:retType IDENT:methName
+					|
+					(MethodVoidName) VOID IDENT:methName
+					;
+
+FormPars ::= (FormParams) FormalParamList 
+			 |
+			 (NoFormParam) 
+			 ;
+
+FormalParamList ::= (FormalParamDecls) FormalParamList COMMA FormalParamDecl
+					|
+					(SingleFormalParamDecl) FormalParamDecl
+					;
+
+FormalParamDecl ::= (FormalParamDeclSingle) Type IDENT 
+					|
+					(FormalParamDeclArray)Type IDENT LSQUARE RSQUARE
+					;
+
+/* ------------------------------------------------------------------------------------------------------------- */
+				
+StatementList ::= (Statements) StatementList Statement 
+				  |
+				  (NoStmt) 
+				  ;
+
+Statement ::=   (DesignatStatement) DesignatorStatement SEMI
+				|
+				(IfElseStatement) IF LPAREN Condition RPAREN Statement OptElseStatement
+				|
+				(DoWhileStatement) DO Statement WHILE LPAREN Condition RPAREN SEMI
+				|													
+				(SwitchStatement) SWITCH LPAREN Expr RPAREN LBRACE CaseList RBRACE
+				|
+				(BreakStatement) BREAK SEMI
+				|
+				(ContinueStatement) CONTINUE SEMI
+				|
+				(ReturnExprStatement) RETURN Expr SEMI
+				|
+				(ReturnStatement) RETURN SEMI
+				|
+				(ReadStatement) READ LPAREN Designator RPAREN SEMI
+				|
+				(PrintStatement) PRINT LPAREN Expr PrintOptNumConst RPAREN SEMI
+				|
+				(StmtListStatement) LBRACE StatementList RBRACE
+				;
+/* ------------------------------------------------------------------------------------------------------------- */
+DesignatorStatement ::= (DesignatorStmtAssignExp) Designator Assignop Expr 
+						|
+						(DesignatorStmtActPars) Designator LPAREN OptActPars RPAREN
+						|
+						(DesignatorStatementIncrement) Designator INCREMENT
+						|
+						(DesignatorStatementDecrement) Designator DECREMENT
+						|
+						(DesignatorStmtAssignExpError) Designator Assignop error 
+						;
+/* ------------------------------------------------------------------------------------------------------------- */
+
+Designator ::= (DesignFStopIdent) Designator FULLSTOP IDENT
+				|
+				(DesignIndex) DesignatorArray  LSQUARE Expr RSQUARE
+				|
+				(DesignIdentSingle) IDENT:name
+				;
+				
+DesignatorArray ::= (DesignatorArray) Designator
+;
+
+Assignop ::= (Assignop) EQUAL
+;
+
+Expr ::= (ExprAddopTerm) AddopTermList // .struct=AddopTermList.struct DONE    
+		|
+		(ExprTernar) CondFact QMARK Expr Colon Expr  
+		;
+
+Colon ::= (Colon) COLON
+;
+
+CondFact ::= (CondFactRelop)  AddopTermList Relop AddopTermList 
+			|	
+			(CondFactNoRelop) AddopTermList 
+;
+
+
+
+AddopTermList ::= (AddopTerms) AddopTermList Addop Term // DONE 
+					|
+					(AddopMinusTermSingle) MINUS Term // analogno kao za AddopTerms, samo za jedan operand DONE
+					|
+					(AddopTermSingle) Term // .struct = Term.struct DONE
+					;
+
+
+Term ::= (MulopFactors) Term Mulop Factor // analogno kao za AddopTerms DONE
+		|
+		(MulopFactorSingle) Factor // .struct = Factor.struct DONE
+		;
+
+Factor ::= (FactorDesignator) Designator OptParenActPars // .struct = Designator.obj.getType() DONE
+			|
+			(FactorNumConst) NUMCONST:value // .struct = Tab.intType  DONE
+			|
+			(FactorCharConst) CHARCONST:value // .struct = Tab.charType DONE
+			|
+			(FactorBoolConst) BOOLCONST:value // .struct = boolType DONE
+			|
+			(FactorNewType) NEW Type OptExpr // .struct = new Struct(Struct.Array, lastType) DONE
+			|
+			(FactorExpr) LPAREN Expr RPAREN // .struct = Expr.struct DONE
+			|
+			(FactorCharAdd) LSQUARE Expr PND Expr RSQUARE// ['A' # 5] * 7
+			|
+			(FactorArrayExpr) Designator AT Factor // niz @ 2 * 3
+			;
+
+
+OptParenActPars ::= (OptParenActParsYes) LPAREN OptActPars RPAREN
+					|
+					(OptParenActParsNo)
+					;
+
+OptActPars ::= (OptActParsYes) ActPars
+				|
+				(OptActParsNo)
+				;
+
+ActPars ::= (ActPars) ExprList 
+;
+
+ExprList ::= (Exprs) ExprList COMMA Expr
+			|
+			(ExprOne) Expr
+			;
+
+
+OptExpr ::= (OptExprYes) LSQUARE Expr RSQUARE
+			|
+			(OptExprNo)
+			;
+
+Mulop ::=   (MulopMul) MUL
+			|
+			(MulopDiv) DIV
+			|
+			(MulopMod) MOD
+			;
+
+
+Addop ::=   (AddopAdd) PLUS
+			|
+			(AddopMinus) MINUS
+			;
+
+/* ------------------------------------------------------------------------------------------------------------- */
+
+Condition ::= (Condition) CondTermList
+;
+				
+CondTermList ::= (ConditionTerms) CondTermList OR CondTerm
+				|
+				(ConditionTerm) CondTerm
+				;
+
+CondTerm ::= (ConditionFactList) CondFactList
+;
+
+CondFactList ::= (ConditionFacts) CondFactList AND CondFact
+				|
+				(ConditionFactOne) CondFact
+				;
+
+Relop ::=   (RelopSame) SAME
+			|
+			(RelopDiff) DIFF
+			|
+			(RelopGt) GT
+			|
+			(RelopGe) GE
+			|
+			(RelopLt) LT
+			|
+			(RelopLe) LE
+			;
+
+/* ------------------------------------------------------------------------------------------------------------- */	
+
+OptElseStatement ::= (ElseStatementYes) ElseStatement
+					|
+					(ElseStatementNo)
+					;
+
+ElseStatement ::= (ElseStatement) ELSE Statement
+;
+
+/* ------------------------------------------------------------------------------------------------------------- */
+
+CaseList ::= (Cases) CaseList Case
+			|
+			(NoCases)
+			;
+
+Case ::= (Case) CASE NUMCONST COLON StatementList
+;
+
+/* ------------------------------------------------------------------------------------------------------------- */
+
+PrintOptNumConst ::= (PrintOptNumConstYes) COMMA NUMCONST:value
+					 |
+					 (PrintOptNumConstNo)
+					 ;
+
